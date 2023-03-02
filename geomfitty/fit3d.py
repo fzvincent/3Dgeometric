@@ -2,7 +2,7 @@ import numpy as np
 import numpy.linalg as la
 from scipy import optimize  # type: ignore
 
-from . import geom3d
+from .geom3d import Line,Torus,Sphere,Cylinder,Plane,Circle3D
 from ._util import distance_point_point
 
 
@@ -32,7 +32,7 @@ def _check_input(points, weights) -> None:
         )
 
 
-def line_fit(points, weights=None) -> geom3d.Line:
+def line_fit(points, weights=None) -> Line:
     """Fits a line through a set points"""
     _check_input(points, weights)
     centroid = centroid_fit(points, weights)
@@ -41,10 +41,10 @@ def line_fit(points, weights=None) -> geom3d.Line:
     u, s, v = np.linalg.svd(
         np.matmul(weights * centered_points.transpose(), centered_points)
     )
-    return geom3d.Line(anchor_point=centroid, direction=v[0])
+    return Line(anchor_point=centroid, direction=v[0])
 
 
-def plane_fit(points, weights=None) -> geom3d.Plane:
+def plane_fit(points, weights=None) -> Plane:
     """Fits a plane through a set of points"""
     _check_input(points, weights)
     centroid = centroid_fit(points, weights)
@@ -53,11 +53,11 @@ def plane_fit(points, weights=None) -> geom3d.Plane:
     u, s, v = np.linalg.svd(
         np.matmul(weights * centered_points.transpose(), centered_points)
     )
-    return geom3d.Plane(anchor_point=centroid, normal=v[2])
+    return Plane(anchor_point=centroid, normal=v[2])
 
 
 # TODO add weights
-def fast_sphere_fit(points) -> geom3d.Sphere:
+def fast_sphere_fit(points) -> Sphere:
     """A fast algebraic circle fit, that uses a modified error function that
     is more sensitive to outliers
     """
@@ -67,12 +67,12 @@ def fast_sphere_fit(points) -> geom3d.Sphere:
     C, _, _, _ = np.linalg.lstsq(A, f, rcond=None)
     center = C[0:3]
     radius = np.average(distance_point_point(points, center))
-    return geom3d.Sphere(center=center, radius=radius)
+    return Sphere(center=center, radius=radius)
 
 
 def sphere_fit(
-    points, weights=None, initial_guess: geom3d.Sphere = None
-) -> geom3d.Sphere:
+    points, weights=None, initial_guess: Sphere = None
+) -> Sphere:
     """Fits a circle through a set of points"""
     _check_input(points, weights)
     initial_guess = initial_guess or fast_sphere_fit(points)
@@ -91,10 +91,10 @@ def sphere_fit(
         raise RuntimeError(results.message)
 
     radius = np.average(distance_point_point(points, results.x), weights=weights)
-    return geom3d.Sphere(center=results.x, radius=radius)
+    return Sphere(center=results.x, radius=radius)
 
 
-def cylinder_fit(points, weights=None, initial_guess: geom3d.Cylinder = None):
+def cylinder_fit(points, weights=None, initial_guess: Cylinder = None):
     """Fits a cylinder trough a set of points"""
     _check_input(points, weights)
     if initial_guess is None:
@@ -103,7 +103,7 @@ def cylinder_fit(points, weights=None, initial_guess: geom3d.Cylinder = None):
         )
 
     def cylinder_fit_residuals(anchor_direction, points, weights):
-        line = geom3d.Line(anchor_direction[:3], anchor_direction[3:])
+        line = Line(anchor_direction[:3], anchor_direction[3:])
         distances = line.distance_to_point(points)
         radius = np.average(distances, weights=weights)
         if weights is None:
@@ -117,13 +117,13 @@ def cylinder_fit(points, weights=None, initial_guess: geom3d.Cylinder = None):
     if not results.success:
         return RuntimeError(results.message)
 
-    line = geom3d.Line(results.x[:3], results.x[3:])
+    line = Line(results.x[:3], results.x[3:])
     distances = line.distance_to_point(points)
     radius = np.average(distances, weights=weights)
-    return geom3d.Cylinder(results.x[:3], results.x[3:], radius)
+    return Cylinder(results.x[:3], results.x[3:], radius)
 
 
-def circle3D_fit(points, weights=None, initial_guess: geom3d.Circle3D = None):
+def circle3D_fit(points, weights=None, initial_guess: Circle3D = None):
     """Fits a circle in three dimensions trough a set of points"""
     _check_input(points, weights)
     if initial_guess is None:
@@ -132,7 +132,7 @@ def circle3D_fit(points, weights=None, initial_guess: geom3d.Circle3D = None):
         )
 
     def circle_fit_residuals(circle_params, points, sqrt_w):
-        circle = geom3d.Circle3D(
+        circle = Circle3D(
             circle_params[:3], circle_params[3:], la.norm(circle_params[3:])
         )
         distances = circle.distance_to_point(points)
@@ -158,10 +158,11 @@ def circle3D_fit(points, weights=None, initial_guess: geom3d.Circle3D = None):
     if not results.success:
         return RuntimeError(results.message)
 
-    return geom3d.Circle3D(results.x[:3], results.x[3:], la.norm(results.x[3:]))
+    return Circle3D(results.x[:3], results.x[3:], la.norm(results.x[3:]))
 
 
-def torus_fit(points, weights=None, initial_guess: geom3d.Torus = None) -> geom3d.Torus:
+
+def torus_fit(points, weights=None, initial_guess: Torus = None) -> Torus:
     """Fits a torus trough a set of points"""
     _check_input(points, weights)
     if initial_guess is None:
@@ -170,7 +171,7 @@ def torus_fit(points, weights=None, initial_guess: geom3d.Torus = None) -> geom3
         )
 
     def torus_fit_residuals(circle_params, points, weights):
-        circle = geom3d.Circle3D(
+        circle = Circle3D(
             circle_params[:3], circle_params[3:], la.norm(circle_params[3:])
         )
         distances = circle.distance_to_point(points)
@@ -191,9 +192,9 @@ def torus_fit(points, weights=None, initial_guess: geom3d.Torus = None) -> geom3
     if not results.success:
         raise RuntimeError(results.message)
 
-    circle3D = geom3d.Circle3D(results.x[:3], results.x[3:], la.norm(results.x[3:]))
+    circle3D = Circle3D(results.x[:3], results.x[3:], la.norm(results.x[3:]))
     distances = circle3D.distance_to_point(points)
     minor_radius = np.average(distances, weights=weights)
-    return geom3d.Torus(
+    return Torus(
         results.x[:3], results.x[3:], la.norm(results.x[3:]), minor_radius
     )

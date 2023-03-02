@@ -4,24 +4,11 @@ from typing import List, Union
 
 import numpy as np
 import open3d as o3d  # type: ignore
-
+import math
 from . import geom3d
+from ._util import vec2vec_rotation
 
-
-def vec2vec_rotation(unit_vec_1, unit_vec_2):
-    angle = np.arccos(np.dot(unit_vec_1, unit_vec_2))
-    if angle < 1e-8:
-        return np.identity(3, dtype=np.float64)
-
-    if angle > (np.pi - 1e-8):
-        # WARNING this only works because all geometries are rotationaly invariant
-        # minus identity is not a proper rotation matrix
-        return -np.identity(3, dtype=np.float64)
-
-    rot_vec = np.cross(unit_vec_1, unit_vec_2)
-    rot_vec /= np.linalg.norm(rot_vec)
-
-    return o3d.geometry.get_rotation_matrix_from_axis_angle(angle * rot_vec)
+print(o3d.__file__)
 
 
 @functools.singledispatch
@@ -39,8 +26,8 @@ def _(points: np.ndarray):
 @to_open3d_geom.register  # type: ignore[no-redef]
 def _(geom: geom3d.Line, length: numbers.Number = 1):
     points = (
-        geom.anchor_point
-        + np.stack([geom.direction, -geom.direction], axis=0) * length / 2
+            geom.anchor_point
+            + np.stack([geom.direction, -geom.direction], axis=0) * length / 2
     )
 
     line_set = o3d.geometry.LineSet(
@@ -74,8 +61,8 @@ def _(geom: geom3d.Plane, length: numbers.Number = 1):
 
 
 @to_open3d_geom.register  # type: ignore[no-redef]
-def _(geom: geom3d.Cylinder, length: numbers.Number = 1):
-    mesh = o3d.geometry.TriangleMesh.create_cylinder(radius=geom.radius, height=length)
+def _(geom: geom3d.Cylinder):
+    mesh = o3d.geometry.TriangleMesh.create_cylinder(radius=geom.radius, height=geom.length)
 
     mesh.remove_vertices_by_index([0, 1])
 
@@ -110,9 +97,40 @@ def _(geom: geom3d.Torus):
     return o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
 
 
+@to_open3d_geom.register  # type: ignore[no-redef]
+def _(geom: geom3d.partialTorus):
+    mesh = o3d.geometry.TriangleMesh.create_torus(
+        torus_radius=geom.major_radius, tube_radius=geom.minor_radius
+    )
+
+    begin_degree = int(len(mesh.triangles) * geom.begin_degree / math.pi / 2)
+    end_degree = int(len(mesh.triangles) * geom.end_degree / math.pi / 2)
+
+    if begin_degree < 0 and end_degree < 0:
+        new_triangles = np.asarray(mesh.triangles)[begin_degree:end_degree]
+    elif begin_degree < 0:
+        new_triangles = np.concatenate((np.asarray(mesh.triangles)[begin_degree:],
+                                        np.asarray(mesh.triangles)[:end_degree]))
+    elif begin_degree >= 0:
+        new_triangles = np.asarray(mesh.triangles)[begin_degree:end_degree]
+
+    mesh.triangles = o3d.utility.Vector3iVector(new_triangles)
+    # mesh.triangle_normals = o3d.utility.Vector3dVector(
+    #     np.asarray(mesh.triangle_normals)[begin_degree:end_degree, :])
+
+    print(mesh.triangles)
+    # o3d.visualization.draw_geometries([mesh])
+
+    rotation = vec2vec_rotation([0, 0, 1], geom.direction)
+    mesh.rotate(rotation)
+    mesh.translate(geom.center)
+
+    return o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
+
+
 def plot(
-    geometries_or_points: List[Union[geom3d.GeometricShape, np.ndarray]],
-    display_coordinate_frame: bool = False,
+        geometries_or_points: List[Union[geom3d.GeometricShape, np.ndarray]],
+        display_coordinate_frame: bool = False,
 ):
     geometries = [to_open3d_geom(g) for g in geometries_or_points]
     if display_coordinate_frame:
